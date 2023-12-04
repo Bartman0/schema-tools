@@ -307,7 +307,8 @@ class BaseImporter:
 
     def table_exists(self, table_name: str) -> bool:
         """Check if a table exists in the database."""
-        return table_name in self.engine.table_names()
+        ins = inspect(self.engine)
+        return table_name in ins.get_table_names()
 
     def create_view_user(self, table) -> None:
         """Create view users/owner in the database."""
@@ -390,8 +391,8 @@ class BaseImporter:
     def prepare_tables(self, tables: dict[str, Table], truncate: bool = False) -> None:
         """Create the tables if needed."""
         for table in tables.values():
-            if not table.exists():
-                table.create()
+            if not self.table_exists(table.name):
+                table.create(self.engine)
             elif truncate:
                 self.engine.execute(table.delete())
 
