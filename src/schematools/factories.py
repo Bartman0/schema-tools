@@ -16,7 +16,7 @@ from sqlalchemy.sql.schema import Column, Index, MetaData, Table
 from sqlalchemy.types import ARRAY
 from sqlalchemy.sql.expression import text, case, or_
 
-import permissions.auth
+from schematools.permissions import auth
 
 from schematools import (
     DATABASE_SCHEMA_NAME_DEFAULT,
@@ -472,7 +472,7 @@ def _format_index_name(index_name: str) -> str:
 
 
 def auth_view_column_factory(column: DatasetFieldSchema) -> Column:
-    if permissions.auth.PUBLIC_SCOPE in column.auth:
+    if auth.PUBLIC_SCOPE in column.auth:
         return _column_factory(column)
     case_clause = [text(f"is_account_group_member('{a}')") for a in column.auth]
     return case((or_(*case_clause), _column_factory(column)), else_=None).label(column.db_name)
@@ -493,7 +493,7 @@ def auth_view_sql(engine, table, view_schema):
 
 def _composable_as_string(composable, encoding="utf-8"):
     if isinstance(composable, sql.Identifier):
-        return f'"{composable.string}"'
+        return f'`{composable.string}`'
     elif isinstance(composable, sql.SQL):
         return composable.string
     elif isinstance(composable, sql.Composed):
