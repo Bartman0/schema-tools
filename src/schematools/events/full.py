@@ -55,7 +55,7 @@ class UpdateParentTableConfiguration:
     def parent_id_value(self, prepared_row: dict) -> str:
         return ".".join(
             [
-                str(prepared_row[to_snake_case(f"{self.parent_schema_table.id}_{fn}")])
+                str(prepared_row[to_snake_case(f"{self.parent_schema_table.shortname}_{fn}")])
                 for fn in self.parent_schema_table.identifier
             ]
         )
@@ -236,7 +236,7 @@ class EventsProcessor:
 
                 importer.generate_db_objects(
                     this_table_id,
-                    db_schema_name=dataset_id,
+                    db_schema_name=to_snake_case(dataset_id),
                     db_table_name=db_table_name,
                     is_versioned_dataset=importer.is_versioned_dataset,
                     ind_extra_index=False,
@@ -275,9 +275,12 @@ class EventsProcessor:
             dataset_id = event_meta["dataset_id"]
             table_id = event_meta["table_id"]
 
+            nested_tables = [
+                to_snake_case(f.nested_table.id) for f in run_configuration.nested_table_fields
+            ]
             table_ids_to_replace = [
                 table_id,
-            ] + [to_snake_case(f.nested_table.id) for f in run_configuration.nested_table_fields]
+            ] + nested_tables
 
             logger.info("End of full load sequence. Replacing active table.")
             with self.conn.begin():
@@ -288,11 +291,12 @@ class EventsProcessor:
                     full_load_table, full_load_schema_table = self._get_full_load_tables(
                         dataset_id, to_snake_case(t_id)
                     )
-                    full_load_tables.append(full_load_table)
+                    full_load_tables.append((full_load_table, full_load_schema_table))
 
-                    fieldnames = ", ".join(
-                        [field.db_name for field in full_load_schema_table.get_db_fields()]
-                    )
+                    fields = [field.db_name for field in full_load_schema_table.get_db_fields()]
+                    if t_id in nested_tables:
+                        fields.remove("id")  # Let PG generate the id field for nested tables.
+                    fieldnames = ", ".join(fields)
 
                     self.conn.execute(f"TRUNCATE {table_to_replace.fullname}")
                     self.conn.execute(
@@ -302,16 +306,15 @@ class EventsProcessor:
                 if run_configuration.update_parent_table_configuration:
                     self._update_parent_table_bulk(run_configuration)
 
-                for full_load_table in full_load_tables:
+                for full_load_table, full_load_schema_table in full_load_tables:
                     self.conn.execute(f"DROP TABLE {full_load_table.fullname} CASCADE")
+                    self.full_load_tables[dataset_id].pop(to_snake_case(full_load_schema_table.id))
 
                 # Copy full_load lasteventid to active table and set full_load lasteventid to None
                 self.lasteventids.copy_lasteventid(
                     self.conn, run_configuration.table_name, table_to_replace.name
                 )
                 self.lasteventids.update_eventid(self.conn, run_configuration.table_name, None)
-
-            self.full_load_tables[dataset_id].pop(to_snake_case(table_id))
 
     def _prepare_row(
         self,
@@ -418,16 +421,16 @@ class EventsProcessor:
 
         event_type = event_meta["event_type"]
 
-        if (
-            run_configuration.check_existence_on_add
-            and event_type == "ADD"
-            and self._row_exists_in_database(run_configuration, id_value)
-        ):
-            logger.info("Row with id %s already exists in database. Skipping.", row["id"])
-            return
-
         db_operation = None
         if run_configuration.update_table:
+            if (
+                run_configuration.check_existence_on_add
+                and event_type == "ADD"
+                and self._row_exists_in_database(run_configuration, id_value)
+            ):
+                logger.info("Row with id %s already exists in database. Skipping.", row["id"])
+                return
+
             db_operation_name, needs_select = EVENT_TYPE_MAPPINGS[event_type]
             db_operation = getattr(table, db_operation_name)()
 
@@ -469,7 +472,7 @@ class EventsProcessor:
             if is_delete:
                 continue
 
-            if value := prepared_row.get(field.id, []):
+            if value := prepared_row.get(to_snake_case(field.id), []):
                 if rows := self._prepare_nested_rows(field, value, id_value):
                     self.conn.execute(table.insert(), rows)
 

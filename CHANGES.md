@@ -1,3 +1,31 @@
+# 2023-12-01 (5.18.0)
+
+* Add possibility to use git commit hashes when creating SQL migrations
+  from amsterdam schema table definitions.
+
+# 2023-11-24 (5.17.18)
+
+* Bugfix: Update nested table when nested field name has underscore.
+* Bugfix: Update parent table when parent table has shortname for update events.
+* Bugfix: Only check for row existence when table exists.
+
+# 2023-10-18 (5.17.17)
+
+* Bugfix: Ignore id when copying data from temp table to main table for nested tables.
+
+# 2023-10-18 (5.17.16)
+
+* Bugfix: Snake case temp table schema name in EventProcessor.
+
+# 2023-10-18 (5.17.15)
+
+* Bugfix: Don't try to create schema if schema already exists. Fails on 'create schema'
+  permissions.
+
+# 2023-10-18 (5.17.14)
+
+* Bugfix: Fixed issue where duplicate indexes were created
+
 # 2023-10-06 (5.17.13)
 
 * Bugfix: Cache nested tables in EventProcessor.

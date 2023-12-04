@@ -990,6 +990,51 @@ def test_event_process_last_event_id_full_load_sequence(
     assert get_last_event_id("nap_peilmerken_full_load") is None
 
 
+def test_events_process_full_load_sequence_snake_cased_schema(
+    here, db_schema, tconn, local_metadata, brk2_simple_schema
+):
+    """Tests whether the correct (snake_cased) schema for brk2 is used for the full load."""
+
+    event_meta = {
+        "event_type": "ADD",
+        "event_id": 1,
+        "dataset_id": "brk2",
+        "table_id": "gemeentes",
+        "full_load_sequence": True,
+        "first_of_sequence": True,
+    }
+    event_data = {"identificatie": "0363", "naam": "Amsterdam"}
+
+    importer = EventsProcessor([brk2_simple_schema], tconn, local_metadata=local_metadata)
+    importer.process_event(event_meta, event_data)
+
+    records = [dict(r) for r in tconn.execute("SELECT * FROM brk_2.brk_2_gemeentes_full_load")]
+    assert len(records) == 1
+    assert records[0]["identificatie"] == "0363"
+    assert records[0]["naam"] == "Amsterdam"
+
+    event_meta = {
+        "event_type": "ADD",
+        "event_id": 2,
+        "dataset_id": "brk2",
+        "table_id": "gemeentes",
+        "full_load_sequence": True,
+        "last_of_sequence": True,
+    }
+    event_data = {
+        "identificatie": "0457",
+        "naam": "Weesp",
+    }
+    importer.process_event(event_meta, event_data)
+
+    records = [dict(r) for r in tconn.execute("SELECT * FROM brk_2_gemeentes")]
+    assert len(records) == 2
+    assert records[0]["identificatie"] == "0363"
+    assert records[0]["naam"] == "Amsterdam"
+    assert records[1]["identificatie"] == "0457"
+    assert records[1]["naam"] == "Weesp"
+
+
 def test_events_process_full_load_relation_update_parent_table(
     here, db_schema, tconn, local_metadata, nap_schema, gebieden_schema
 ):
@@ -1203,6 +1248,78 @@ def test_full_load_shortnames(here, db_schema, tconn, local_metadata, hr_simple_
     assert records[0]["heeft_hoofdvestiging_id"] == "24902480"
 
 
+def test_full_load_shortnames_update(here, db_schema, tconn, local_metadata, hr_simple_schema):
+    importer = EventsProcessor([hr_simple_schema], tconn, local_metadata=local_metadata)
+
+    # First import an object with nested objects
+    events = [
+        (
+            {
+                "event_type": "ADD",
+                "event_id": 1,
+                "dataset_id": "hr",
+                "table_id": "maatschappelijkeactiviteiten",
+            },
+            {
+                "kvknummer": 42,
+                "email_adressen": [
+                    {
+                        "email_adres": "address1@example.com",
+                    },
+                    {
+                        "email_adres": "address2@example.com",
+                    },
+                ],
+            },
+        )
+    ]
+    importer.process_events(events)
+
+    # Not testing contents here, but merely the fact that the right tables are used without errors
+    records = [dict(r) for r in tconn.execute("SELECT * FROM hr_mac")]
+    assert len(records) == 1
+    assert records[0]["heeft_hoofdvestiging_id"] is None
+
+    nested_records = [dict(r) for r in tconn.execute("SELECT * FROM hr_mac_email_adressen")]
+    assert len(nested_records) == 2
+    assert nested_records[0]["parent_id"] == "42"
+    assert nested_records[0]["email_adres"] == "address1@example.com"
+
+    # Now test adding a relation object that references a parent table with short name
+    events = [
+        (
+            {
+                "dataset_id": "hr",
+                "table_id": "maatschappelijkeactiviteiten_heeftHoofdvestiging",
+                "event_type": "ADD",
+                "event_id": 1658565091,
+                "tid": "42.AMSBI.24902480",
+                "generated_timestamp": "2023-10-05T09:59:05.314873",
+            },
+            {
+                "mac_kvknummer": "42",
+                "mac_id": "42",
+                "heeft_hoofdvestiging_vestigingsnummer": "24902480",
+                "heeft_hoofdvestiging_id": "24902480",
+                "begin_geldigheid": None,
+                "eind_geldigheid": None,
+                "id": 457172,
+            },
+        )
+    ]
+
+    importer.process_events(events)
+    rel_records = [dict(r) for r in tconn.execute("SELECT * FROM hr_mac_heeft_hoofdvestiging")]
+    assert len(rel_records) == 1
+    assert rel_records[0]["id"] == 457172
+    assert rel_records[0]["mac_id"] == "42"
+    assert rel_records[0]["heeft_hoofdvestiging_id"] == "24902480"
+
+    records = [dict(r) for r in tconn.execute("SELECT * FROM hr_mac")]
+    assert len(records) == 1
+    assert records[0]["heeft_hoofdvestiging_id"] == "24902480"
+
+
 def test_reset_lasteventid_after_incomplete_full_load(
     here, db_schema, tconn, local_metadata, nap_schema, gebieden_schema
 ):
@@ -1236,3 +1353,47 @@ def test_reset_lasteventid_after_incomplete_full_load(
         "SELECT * FROM benk_lasteventids WHERE \"table\" = 'nap_peilmerken_full_load'"
     ).fetchone()
     assert lasteventrecord["last_event_id"] == 1
+
+
+def test_avoid_duplicate_key_after_full_load(
+    here, db_schema, tconn, local_metadata, bag_verblijfsobjecten_schema
+):
+    """Make sure we don't get duplicate key errors after a full load sequence with a serial id
+    field in the table."""
+
+    def create_event(gebruiksdoel_cnt: int, event_id: int, identificatie: str, **extra_headers):
+        gebruiksdoelen = [
+            {"code": i, "omschrijving": f"doel {i}"} for i in range(1, gebruiksdoel_cnt + 1)
+        ]
+        return (
+            {
+                "event_type": "ADD",
+                "event_id": event_id,
+                "dataset_id": "bag",
+                "table_id": "verblijfsobjecten",
+                **extra_headers,
+            },
+            {
+                "identificatie": identificatie,
+                "volgnummer": 1,
+                "gebruiksdoel": gebruiksdoelen,
+                "toegang": None,
+                "ligt_in_buurt": {},
+                "begin_geldigheid": "2018-10-22T00:00:00.000000",
+                "eind_geldigheid": None,
+            },
+        )
+
+    importer = EventsProcessor(
+        [bag_verblijfsobjecten_schema], tconn, local_metadata=local_metadata
+    )
+
+    # Add objects with in total 4 nested objects
+    full_load_events = [
+        create_event(2, 1, "VB1", full_load_sequence=True, first_of_sequence=True),
+        create_event(2, 2, "VB2", full_load_sequence=True, last_of_sequence=True),
+    ]
+    importer.process_events(full_load_events)
+
+    update_event = [create_event(1, 3, "VB3")]
+    importer.process_events(update_event)
