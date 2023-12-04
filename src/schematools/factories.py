@@ -11,10 +11,10 @@ from typing import DefaultDict, cast
 from geoalchemy2.types import Geometry
 from psycopg2 import sql
 import psycopg2.extensions
-from sqlalchemy import JSON, BigInteger, Boolean, Date, DateTime, Float, Numeric, String, Time, text, select, or_
+from sqlalchemy import JSON, BigInteger, Boolean, Date, DateTime, Float, Numeric, String, Time
 from sqlalchemy.sql.schema import Column, Index, MetaData, Table
 from sqlalchemy.types import ARRAY
-from sqlalchemy.sql.expression import text, case, or_
+from sqlalchemy.sql.expression import text, select, case, or_
 
 from schematools.permissions import auth
 
@@ -58,13 +58,13 @@ JSON_TYPE_TO_PG = {
 }
 
 GEOJSON_TYPE_TO_WKT = {
-    "https://geojson.org/schema/Geometry.json": "GEOMETRY",
-    "https://geojson.org/schema/Point.json": "POINT",
-    "https://geojson.org/schema/Polygon.json": "POLYGON",
-    "https://geojson.org/schema/MultiPolygon.json": "MULTIPOLYGON",
-    "https://geojson.org/schema/MultiPoint.json": "MULTIPOINT",
-    "https://geojson.org/schema/LineString.json": "LINESTRING",
-    "https://geojson.org/schema/MultiLineString.json": "MULTILINESTRING",
+    "https://geojson.org/schema/Geometry.json": String,
+    "https://geojson.org/schema/Point.json": String,
+    "https://geojson.org/schema/Polygon.json": String,
+    "https://geojson.org/schema/MultiPolygon.json": String,
+    "https://geojson.org/schema/MultiPoint.json": String,
+    "https://geojson.org/schema/LineString.json": String,
+    "https://geojson.org/schema/MultiLineString.json": String,
 }
 
 
@@ -223,14 +223,7 @@ def _get_col_type(field: DatasetFieldSchema):
         return _numeric_datatype_scale(scale_=field_multiple)
 
     if field.is_geo:
-        is_3d = field.srid in SRID_3D
-        return Geometry(
-            geometry_type=GEOJSON_TYPE_TO_WKT[field.type],
-            srid=field.srid,
-            dimension=3 if is_3d else 2,
-            spatial_index=False,  # Done manually below for control over index naming
-            # use_N_D_index=field.srid in SRID_3D,
-        )
+        return GEOJSON_TYPE_TO_WKT[field.type]
 
     return JSON_TYPE_TO_PG[field.type]
 
@@ -479,7 +472,8 @@ def auth_view_column_factory(column: DatasetFieldSchema) -> Column:
 
 
 def auth_view_sql(engine, table, view_schema):
-    columns_transformed = [auth_view_column_factory(c) for c in table.dataset_table.get_db_fields()]
+    columns_transformed = [auth_view_column_factory(c) for c
+                           in table.dataset_table.get_db_fields()]
     where_clause = [text(f"is_account_group_member('{a}')") for a in table.dataset_table.auth]
     select_statement = select(*columns_transformed).select_from(table).where(or_(*where_clause))
     view_name = table.name
