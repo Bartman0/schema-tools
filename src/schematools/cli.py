@@ -960,6 +960,7 @@ def create_tables(db_url: str, schema_url: str, dataset_id: str) -> None:
             is_versioned_dataset=importer.is_versioned_dataset,
         )
 
+
 @create.command("sql")
 @click.option("--versioned/--no-versioned", default=True)
 @option_db_url
