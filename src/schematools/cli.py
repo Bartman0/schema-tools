@@ -961,6 +961,7 @@ def create_tables(db_url: str, schema_url: str, dataset_id: str) -> None:
         )
 
 
+# TODO: waarom is de bepaling van het database schema anders dan bij 'create tables'
 @create.command("sql")
 @click.option("--versioned/--no-versioned", default=True)
 @option_db_url
