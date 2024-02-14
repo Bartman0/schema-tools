@@ -475,14 +475,16 @@ def auth_to_group(scope: str) -> str:
 def auth_view_column_factory(column: DatasetFieldSchema, team_code: str) -> Column:
     if auth.PUBLIC_SCOPE in column.auth:
         return _column_factory(column)
-    case_clause = [text(f"is_account_group_member('EM4W-{team_code}-DATA-{auth_to_group(a)}')") for a in column.auth]
+    case_clause = [text(f"is_account_group_member('EM4W-{team_code}-DATA-{auth_to_group(a)}')") 
+                   for a in column.auth]
     return case((or_(*case_clause), _column_factory(column)), else_=None).label(column.db_name)
 
 
 def auth_view_sql(engine, table, view_schema, team_code):
     columns_transformed = [auth_view_column_factory(c, team_code) for c
                            in table.dataset_table.get_db_fields()]
-    where_clause = [text(f"is_account_group_member('{a}')") for a in table.dataset_table.auth]
+    where_clause = [text(f"is_account_group_member('EM4W-{team_code}-DATA-{auth_to_group(a)}')") 
+                    for a in table.dataset_table.auth]
     select_statement = select(*columns_transformed).select_from(table).where(or_(*where_clause))
     view_name = table.name
     view_sql = str(select_statement.compile(engine))
