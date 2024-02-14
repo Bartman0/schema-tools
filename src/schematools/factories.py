@@ -483,7 +483,7 @@ def auth_view_sql(engine, table, view_schema, team_code):
     columns_transformed = [auth_view_column_factory(c, team_code) for c
                            in table.dataset_table.get_db_fields()]
     where_clause = [text(f"is_account_group_member('{a}')") for a in table.dataset_table.auth]
-    select_statement = select(*columns_transformed).select_from(table)
+    select_statement = select(*columns_transformed).select_from(table).where(or_(*where_clause))
     view_name = table.name
     view_sql = str(select_statement.compile(engine))
     view_template = "CREATE OR REPLACE VIEW {view_schema}.{view_name} AS {view_sql}"
