@@ -981,15 +981,16 @@ def create_sql(versioned: bool, db_url: str, schema_path: str) -> None:
 @click.option("--versioned/--no-versioned", default=True)
 @option_db_url
 @click.option("--view-schema", required=True)
+@click.option("--team-code", required=True)
 @click.argument("schema_path")
-def create_secured_views(versioned: bool, db_url: str, view_schema: str, schema_path: str) -> None:
+def create_secured_views(versioned: bool, db_url: str, view_schema: str, schema_path: str, team_code: str) -> None:
     """Generate SQL for creating secured views from amsterdam schema definition."""
     engine = _get_engine(db_url)
     loader = FileSystemSchemaLoader.from_file(schema_path)
     dataset_schema = loader.get_dataset_from_file(schema_path)
     tables = tables_factory(dataset_schema, is_versioned_dataset=versioned)
     for table in tables.values():
-        create_view_sql = auth_view_sql(engine, table, view_schema)
+        create_view_sql = auth_view_sql(engine, table, view_schema, team_code)
         click.echo(str(create_view_sql))
 
 
